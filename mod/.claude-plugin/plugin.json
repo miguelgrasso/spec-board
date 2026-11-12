@@ -1,0 +1,6 @@
+{
+  "name": "spec-board",
+  "version": "0.1.0",
+  "description": "Semáforo de tareas de los specs de Kiro (.kiro/specs/*/tasks.md) con progreso por fase y trazabilidad a requirements y design.",
+  "types": "./types/index.d.ts"
+}

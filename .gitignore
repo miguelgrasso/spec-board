@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+# written by the Claude Code engine when the mod loads
+mod/.claude-plugin/types/
+# generated per project (live in <project>/.claude/spec-board/)
+data.js
+runs/
+.env

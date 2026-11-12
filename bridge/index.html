@@ -1,0 +1,573 @@
+<title>swarm-guard Spec Board</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+  /* Layout: sticky summary band on top, filter bar, card grid; a right-hand drawer for one task.
+     Look: Tokyo Night base (indigo-black, violet lines) with Matrix phosphor green as the single accent;
+     one deliberate dark theme, mono type for every identifier and heading, faint scanlines. */
+  :root {
+    --bg: #16161e;
+    --surface: #1a1b26;
+    --surface-2: #24283b;
+    --fg: #c0caf5;
+    --fg-muted: #7a84b3;
+    --line: #3b4261;
+    --accent: #c84bff;
+    --accent-dim: #8a2bd9;
+    --accent-fg: #170a24;
+    --magenta: #7aa2f7;
+    --cyan: #7dcfff;
+    --done: #c84bff;
+    --done-bg: #2e1a44;
+    --progress: #e0af68;
+    --progress-bg: #3a2e17;
+    --pending: #f7768e;
+    --pending-bg: #3d1f29;
+    --glow: 0 0 0 1px rgba(200, 75, 255, .55), 0 0 22px rgba(200, 75, 255, .35);
+    --shadow: 0 1px 0 rgba(0,0,0,.5), 0 12px 32px rgba(0, 0, 0, .55);
+    --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); margin: 0; position: relative; }
+  /* scanlines over everything, below the pointer */
+  body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 30; opacity: .35;
+    background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.22) 2px 3px); }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+  ::selection { background: var(--accent); color: var(--accent-fg); }
+  .wrap h1, .card .id, .pill, .tag, .stat b, .phase .mono, .drawer h3, .count, .legend { font-family: var(--mono); }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .muted { color: var(--fg-muted); }
+  h1, h2, h3 { margin: 0; text-wrap: balance; }
+
+  .wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+  header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); overflow: hidden;
+    box-shadow: inset 0 -1px 0 rgba(200, 75, 255, .7), 0 1px 14px rgba(200, 75, 255, .25); }
+  header canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .22; pointer-events: none; }
+  header > .wrap { position: relative; }
+  .head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; padding-block: 12px; }
+  .head h1 { font-size: 17px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); text-shadow: 0 0 8px rgba(200,75,255,.9), 0 0 22px rgba(200,75,255,.5); }
+  .head h1::before { content: "> "; color: var(--accent-dim); }
+  .head h1 span { color: var(--fg); font-weight: 400; text-transform: none; letter-spacing: 0; text-shadow: none; }
+  .head h1 span::after { content: "_"; color: var(--accent); animation: blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .stats { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-left: auto; }
+  .stat { display: flex; align-items: baseline; gap: 6px; }
+  .stat b { font-size: 18px; font-weight: 600; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .dot.done { background: var(--done); box-shadow: 0 0 8px var(--done); } .dot.progress { background: var(--progress); box-shadow: 0 0 8px var(--progress); } .dot.pending { background: var(--pending); box-shadow: 0 0 8px var(--pending); }
+
+  .phases { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 20px; padding-block: 0 12px; }
+  .phase { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; }
+  .phase .name { font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar { grid-column: 1 / -1; height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; display: flex; }
+  .bar i { display: block; height: 100%; }
+  .bar .d { background: var(--done); box-shadow: 0 0 12px rgba(200,75,255,.9); } .bar .p { background: var(--progress); }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-block: 12px 4px; }
+  .controls input[type=search] { flex: 1 1 220px; min-width: 0; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+  .controls select { padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+  .chip { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 5px 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .chip { font-family: var(--mono); font-size: 12.5px; }
+  .chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--done-bg); box-shadow: var(--glow); }
+  .controls input[type=search] { font-family: var(--mono); }
+  .controls input[type=search]::placeholder { color: var(--fg-muted); }
+  .controls input[type=search]:focus { border-color: var(--accent); box-shadow: var(--glow); outline: none; }
+  .count { padding-block: 6px 10px; }
+
+  main { padding-block: 0 40px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .card { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px 12px 18px; text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 8px; min-width: 0; box-shadow: none; transition: box-shadow .15s, transform .15s; }
+  .card:hover { box-shadow: var(--shadow), var(--glow); transform: translateY(-1px); border-color: var(--accent-dim); }
+  .card::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--pending); box-shadow: 0 0 10px var(--pending); }
+  .card.done::before { background: var(--done); box-shadow: 0 0 10px var(--done); } .card.progress::before { background: var(--progress); box-shadow: 0 0 10px var(--progress); }
+  .card .id { color: var(--accent); }
+  .card.pending .id { color: var(--pending); }
+  .card.progress .id { color: var(--progress); }
+  .card.sub { border-style: dashed; }
+  .card .top { display: flex; align-items: center; gap: 8px; }
+  .card .id { font-weight: 500; }
+  .pill { font-size: 11.5px; font-weight: 500; letter-spacing: .02em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; }
+  .pill.done { background: var(--done-bg); color: var(--done); } .pill.progress { background: var(--progress-bg); color: var(--progress); } .pill.pending { background: var(--pending-bg); color: var(--pending); }
+  .card .pct { margin-left: auto; font-weight: 500; }
+  .card .title { font-weight: 500; line-height: 1.35; }
+  .card .bar { height: 4px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag { font-size: 12px; border-radius: 4px; padding: 2px 7px; background: var(--surface-2); color: var(--fg); }
+  .tag.req { color: var(--cyan); background: rgba(125, 207, 255, .1); }
+  .tag.design { color: var(--magenta); background: transparent; border: 1px solid rgba(122, 162, 247, .55); }
+  .tag.more { color: var(--fg-muted); }
+  .card .foot { display: flex; gap: 12px; font-size: 12.5px; color: var(--fg-muted); flex-wrap: wrap; }
+  .card .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 2px; }
+  a.run { text-decoration: none; }
+  .run { font-family: var(--mono); font-size: 12.5px; font-weight: 500; letter-spacing: .02em; border: 1px solid var(--accent); color: var(--accent); background: transparent; border-radius: 6px; padding: 5px 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: box-shadow .15s, background .15s; }
+  .run:hover:not(:disabled) { background: var(--done-bg); box-shadow: var(--glow); }
+  .run:disabled { opacity: .45; cursor: not-allowed; border-color: var(--line); color: var(--fg-muted); }
+  .run.busy { animation: pulse 1s ease-in-out infinite; }
+  .run.test { border-color: var(--cyan); color: var(--cyan); }
+  .run.test:hover:not(:disabled) { background: rgba(125, 207, 255, .12); box-shadow: 0 0 0 1px rgba(125,207,255,.5), 0 0 18px rgba(125,207,255,.3); }
+  .verify { border-left: 2px solid var(--cyan); padding: 6px 10px; background: rgba(125, 207, 255, .06); border-radius: 0 6px 6px 0; margin: 0; }
+  @keyframes pulse { 50% { box-shadow: var(--glow); } }
+  .ghost { font-family: var(--mono); font-size: 12px; border: 1px solid var(--line); background: transparent; color: var(--fg-muted); border-radius: 6px; padding: 5px 9px; cursor: pointer; }
+  .ghost:hover { color: var(--fg); border-color: var(--fg-muted); }
+  .sent { font-family: var(--mono); font-size: 11.5px; color: var(--cyan); }
+  .claude-note { font-size: 12.5px; color: var(--fg-muted); padding-block: 0 8px; }
+  .claude-note b { color: var(--accent); font-weight: 500; }
+  .empty { padding: 40px 0; text-align: center; color: var(--fg-muted); }
+
+  .scrim { position: fixed; inset: 0; background: rgba(6, 8, 14, .6); backdrop-filter: blur(2px); z-index: 20; }
+  .drawer { border-left-color: var(--accent-dim) !important; }
+  .drawer h2 .mono { color: var(--accent); }
+  .drawer a { color: var(--cyan); }
+  .item .k b { color: var(--cyan); }
+  .via.exact { box-shadow: 0 0 10px rgba(200,75,255,.6); }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100%); background: var(--surface); border-left: 1px solid var(--line); z-index: 21; overflow-y: auto;
+    padding-top: calc(16px + env(safe-area-inset-top, 0px)); padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    padding-left: 20px; padding-right: max(20px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 18px; box-shadow: var(--shadow); }
+  .drawer .dhead { display: flex; align-items: flex-start; gap: 10px; }
+  .drawer h2 { font-size: 17px; font-weight: 600; flex: 1; min-width: 0; }
+  .drawer .close { border: 1px solid var(--line); background: var(--surface-2); border-radius: 6px; width: 32px; height: 32px; cursor: pointer; flex: none; }
+  .drawer section { display: flex; flex-direction: column; gap: 8px; }
+  .drawer h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-muted); }
+  .loc { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .loc code { background: var(--surface-2); padding: 3px 7px; border-radius: 4px; font-family: var(--mono); font-size: 12.5px; }
+  .copy { border: 1px solid var(--line); background: var(--surface); border-radius: 5px; padding: 3px 9px; cursor: pointer; font-size: 12.5px; }
+  .item { border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .item .k { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .item .k b { font-family: var(--mono); font-weight: 500; }
+  .item .k small { color: var(--fg-muted); }
+  .item p { margin: 0; }
+  .item .story { font-size: 12.5px; color: var(--fg-muted); font-style: italic; }
+  .via { font-size: 11.5px; padding: 1px 6px; border-radius: 4px; background: var(--surface-2); color: var(--fg-muted); }
+  .via.exact { background: var(--done-bg); color: var(--done); }
+  .subrow { display: flex; gap: 8px; align-items: center; }
+  .subrow .pct { margin-left: auto; color: var(--fg-muted); }
+  ul.body { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+  .legend { font-size: 12.5px; color: var(--fg-muted); }
+
+  @media (prefers-reduced-motion: reduce) { .card { transition: none; } .head h1 span::after { animation: none; } header canvas { display: none; } .run.busy { animation: none; } }
+  @media (max-width: 520px) { .stats { margin-left: 0; } .head h1 { font-size: 16px; } }
+</style>
+
+<header>
+  <canvas id="rain" aria-hidden="true"></canvas>
+  <div class="wrap head">
+    <h1>Spec board <span id="specName">·</span></h1>
+    <div class="stats">
+      <div class="stat"><b id="sPct" class="mono">0%</b><span class="muted">avance</span></div>
+      <div class="stat"><span class="dot done"></span><b id="sDone" class="mono">0</b><span class="muted">hechas</span></div>
+      <div class="stat"><span class="dot progress"></span><b id="sProg" class="mono">0</b><span class="muted">en curso</span></div>
+      <div class="stat"><span class="dot pending"></span><b id="sPend" class="mono">0</b><span class="muted">pendientes</span></div>
+    </div>
+  </div>
+  <div class="wrap phases" id="phases"></div>
+</header>
+
+<main class="wrap">
+  <div class="controls">
+    <input type="search" id="q" placeholder="Buscar tarea, requirement (3.4) o sección de design…" aria-label="Buscar">
+    <select id="phaseSel" aria-label="Fase"><option value="">Todas las fases</option></select>
+    <button class="chip" id="fDone" aria-pressed="true"><span class="dot done"></span>Hechas</button>
+    <button class="chip" id="fProg" aria-pressed="true"><span class="dot progress"></span>En curso</button>
+    <button class="chip" id="fPend" aria-pressed="true"><span class="dot pending"></span>Pendientes</button>
+    <button class="chip" id="fSub" aria-pressed="false">Subtareas</button>
+  </div>
+  <div class="count muted" id="count"></div>
+  <p class="claude-note" id="bridgeNote"><b>▶ Ejecutar</b> y <b>✓ Testear</b> abren una pestaña en tu máquina (<code id="bridgeShown">http://127.0.0.1:8787</code>) donde <code>bridge.py</code> lanza un agente <code>claude -p</code> para esa tarea; el log se ve en vivo ahí. Arranca el bridge con <code>.venv\Scripts\python.exe .claude\spec-board\bridge.py</code>. <b>Si este visor no abre pestañas hacia tu PC, usa el dashboard local: <a href="http://127.0.0.1:8787/board" target="_blank" rel="noopener">127.0.0.1:8787/board</a></b> (misma página, datos en vivo, botones operativos). Piloto limitado a las tareas A&lt;n&gt;; las B y el checkpoint van a mano. <button class="ghost" id="bridgeCfg">Cambiar URL del bridge</button></p>
+  <p class="claude-note" id="claudeNote">Comprobando si Claude puede recibir encargos desde esta página…</p>
+  <div class="grid" id="grid"></div>
+  <p class="legend" id="gen"></p>
+</main>
+
+<div id="drawerRoot" hidden></div>
+
+<script src="data.js"></script>
+<script>
+(function () {
+  const D = window.SPEC_DATA;
+  if (!D) { document.getElementById('grid').innerHTML = '<p class="empty">No se encontró data.js.</p>'; return; }
+  const byId = Object.fromEntries(D.tasks.map(t => [t.id, t]));
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const STATUS_ES = { done: 'hecha', progress: 'en curso', pending: 'pendiente' };
+
+  // --- header ---------------------------------------------------------------
+  $('specName').textContent = D.spec;
+  $('sPct').textContent = D.totals.percent + '%';
+  $('sDone').textContent = D.totals.done;
+  $('sProg').textContent = D.totals.progress;
+  $('sPend').textContent = D.totals.pending;
+  $('gen').textContent = `Generado ${new Date(D.generatedAt).toLocaleString()} desde .kiro/specs/${D.spec}/ · ${D.totals.total} tareas, ${D.totals.subtasks} subtareas, ${Object.keys(D.requirements).length} criterios, ${D.designCount} secciones de design.`;
+
+  $('phases').innerHTML = D.phases.map(p => {
+    const n = p.taskIds.length || 1;
+    return `<div class="phase">
+      <div class="name" title="${esc(p.name)}">${esc(p.name)}</div>
+      <div class="mono">${p.percent}% <span class="muted">· ${p.done}/${p.taskIds.length}</span></div>
+      <div class="bar"><i class="d" style="width:${(p.done / n) * 100}%"></i><i class="p" style="width:${(p.progress / n) * 100}%"></i></div>
+    </div>`;
+  }).join('');
+  for (const p of D.phases) {
+    const o = document.createElement('option'); o.value = p.name; o.textContent = p.name; $('phaseSel').appendChild(o);
+  }
+
+  // --- filters ----------------------------------------------------------------
+  const state = { q: '', phase: '', done: true, progress: true, pending: true, subs: false };
+  try {
+    const saved = JSON.parse(localStorage.getItem('spec-board-filters') || 'null');
+    if (saved && typeof saved === 'object') Object.assign(state, saved);
+  } catch (e) { /* storage unavailable */ }
+  $('q').value = state.q; $('phaseSel').value = state.phase;
+  const chips = { done: $('fDone'), progress: $('fProg'), pending: $('fPend'), subs: $('fSub') };
+  const syncChips = () => { for (const k in chips) chips[k].setAttribute('aria-pressed', String(!!state[k])); };
+  syncChips();
+  const persist = () => { try { localStorage.setItem('spec-board-filters', JSON.stringify(state)); } catch (e) { /* ignore */ } };
+
+  function haystack(t) {
+    const reqText = t.requirements.map(r => r + ' ' + (D.requirements[r] ? D.requirements[r].text : '')).join(' ');
+    const des = t.design.map(d => d.heading).join(' ');
+    return (t.id + ' ' + t.title + ' ' + reqText + ' ' + des + ' ' + t.properties.join(' ') + ' ' + t.body.join(' ')).toLowerCase();
+  }
+  const hay = Object.fromEntries(D.tasks.map(t => [t.id, haystack(t)]));
+
+  function visible() {
+    const q = state.q.trim().toLowerCase();
+    return D.tasks.filter(t => {
+      if (t.parentId && !state.subs) return false;
+      if (!state[t.status]) return false;
+      if (state.phase && (t.phase || 'Tasks') !== state.phase) return false;
+      if (q && !hay[t.id].includes(q)) return false;
+      return true;
+    });
+  }
+
+  function card(t) {
+    const reqs = t.requirements.slice(0, 5).map(r => `<span class="tag req" title="${esc(D.requirements[r] ? D.requirements[r].text : 'no encontrado')}">${esc(r)}</span>`).join('');
+    const moreReq = t.requirements.length > 5 ? `<span class="tag more">+${t.requirements.length - 5}</span>` : '';
+    const des = t.design.slice(0, 2).map(d => `<span class="tag design" title="design.md:${d.line} · ${esc(d.via)}">§ ${esc(d.heading.length > 34 ? d.heading.slice(0, 33) + '…' : d.heading)}</span>`).join('');
+    const moreDes = t.design.length > 2 ? `<span class="tag more">+${t.design.length - 2} design</span>` : '';
+    const subs = t.subtaskIds.length ? `<span>${t.subtaskIds.filter(s => byId[s] && byId[s].status === 'done').length}/${t.subtaskIds.length} subtareas</span>` : '';
+    const parent = t.parentId ? `<span>subtarea de <b class="mono">${esc(t.parentId)}</b></span>` : '';
+    return `<div class="card ${t.status} ${t.parentId ? 'sub' : ''}" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="${esc(t.id)} ${esc(t.title)}">
+      <div class="top"><span class="id mono">${esc(t.id)}</span><span class="pill ${t.status}">${STATUS_ES[t.status]}</span><span class="pct mono">${t.percent}%</span></div>
+      <div class="title">${esc(t.title)}</div>
+      <div class="bar"><i class="${t.status === 'done' ? 'd' : 'p'}" style="width:${t.percent}%"></i></div>
+      <div class="tags">${reqs}${moreReq}${des}${moreDes}</div>
+      <div class="foot">${subs}${parent}<span>tasks.md:${t.line}</span></div>
+      <div class="actions">${runControls(t)}</div>
+    </div>`;
+  }
+
+  // --- "run with Claude": comments.sendToClaude + copyable prompt ----------
+  const RUNS_KEY = 'spec-board-runs';
+  let runs = {};
+  try { runs = JSON.parse(localStorage.getItem(RUNS_KEY) || '{}') || {}; } catch (e) { runs = {}; }
+  for (const k in runs) if (typeof runs[k] === 'number') runs[k] = { run: runs[k] };
+  const hhmm = ts => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  let sendState = 'checking'; // checking | available | writers_only | no_session | off | absent
+  let commentsApi = null;
+
+  // --- local bridge: a click opens http://127.0.0.1:8787/run?... in a new tab, where a
+  // bridge.py on the user's machine launches an autonomous `claude -p` for that task.
+  const BRIDGE_KEY = 'spec-board-bridge';
+  let bridge = 'http://127.0.0.1:8787';
+  try { bridge = localStorage.getItem(BRIDGE_KEY) || bridge; } catch (e) { /* ignore */ }
+  const PILOT_TASK = /^A\d+(\.\d+)?$/;
+  const bridgeAllows = t => PILOT_TASK.test(t.id);
+  const bridgeUrl = (t, mode) => `${bridge.replace(/\/$/, '')}/run?task=${encodeURIComponent(t.id)}&mode=${mode}`;
+
+  function runControls(t) {
+    const r = runs[t.id] || {};
+    if (bridge) {
+      const ok = bridgeAllows(t);
+      const why = t.id.startsWith('B') ? 'Fase B: corridas con Bedrock, CloudFormation o publicación. Se ejecuta a mano con Claude.'
+        : 'Checkpoint: requiere confirmación humana, no un agente autónomo.';
+      const runLabel = t.status === 'done' ? 'Re-ejecutar' : 'Ejecutar';
+      const links = ok
+        ? `<a class="run" href="${esc(bridgeUrl(t, 'run'))}" target="_blank" rel="noopener" title="Lanza un agente claude -p en tu máquina para implementar esta tarea">▶ ${runLabel}</a>
+           <a class="run test" href="${esc(bridgeUrl(t, 'test'))}" target="_blank" rel="noopener" title="Lanza un agente claude -p que ejecuta el criterio de verificación y reporta PASS/FAIL">✓ Testear</a>`
+        : `<button class="run" disabled title="${esc(why)}">▶ Manual</button><button class="run test" disabled title="${esc(why)}">✓ Manual</button>`;
+      const comment = sendState === 'available'
+        ? `<button class="ghost" data-run="${esc(t.id)}" title="Alternativa: envía el encargo como comentario a la sesión de Claude que publicó la página">↗ comentario</button>`
+        : '';
+      return `${links}<button class="ghost" data-prompt="${esc(t.id)}" title="Copia el encargo de implementación">Copiar prompt</button>${comment}`;
+    }
+    const sent = [
+      r.run ? `<span class="sent">↗ ejecutar ${hhmm(r.run)}</span>` : '',
+      r.test ? `<span class="sent">↗ test ${hhmm(r.test)}</span>` : '',
+    ].join('');
+    const label = t.status === 'done' ? 'Re-ejecutar' : 'Ejecutar con Claude';
+    const can = sendState === 'available';
+    const why = sendState === 'checking' ? 'Comprobando disponibilidad…'
+      : sendState === 'no_session' ? 'No hay una sesión de Claude escuchando ahora mismo'
+      : sendState === 'writers_only' ? 'Solo un editor de la página puede enviar a Claude'
+      : 'El envío a Claude no está disponible en esta vista; copia el prompt';
+    const runTitle = can ? 'Envía el encargo de implementación a la sesión de Claude que publicó esta página' : why;
+    const testTitle = can ? 'Pide a Claude que ejecute el criterio de verificación y compruebe los requirements, sin modificar código' : why;
+    return `<button class="run" data-run="${esc(t.id)}" ${can ? '' : 'disabled'} title="${esc(runTitle)}">▶ ${label}</button>
+      <button class="run test" data-test="${esc(t.id)}" ${can ? '' : 'disabled'} title="${esc(testTitle)}">✓ Testear</button>
+      <button class="ghost" data-prompt="${esc(t.id)}" title="Copia el encargo de implementación para pegarlo en Claude Code o Kiro">Copiar prompt</button>
+      <button class="ghost" data-prompt-test="${esc(t.id)}" title="Copia el encargo de verificación">Copiar test</button>${sent}`;
+  }
+
+  function contextLines(t) {
+    const lines = [];
+    lines.push(`Ubicación: .kiro/specs/${D.spec}/tasks.md:${t.line}${t.parentId ? ` (subtarea de ${t.parentId})` : ''}.`);
+    if (t.subtaskIds.length) {
+      lines.push('Subtareas:');
+      t.subtaskIds.forEach(s => { const st = byId[s]; if (st) lines.push(`- [${st.status === 'done' ? 'x' : ' '}] ${st.id} ${st.title}`); });
+    }
+    if (t.requirements.length) {
+      lines.push('Requirements:');
+      t.requirements.forEach(r => { const it = D.requirements[r]; lines.push(`- ${r}: ${it ? it.text : '(ver requirements.md)'}`); });
+    }
+    if (t.design.length) {
+      lines.push('Secciones de design relacionadas:');
+      t.design.slice(0, 6).forEach(d => lines.push(`- § ${d.heading} (design.md:${d.line})`));
+    }
+    return lines;
+  }
+
+  function buildPrompt(t, mode) {
+    const lines = [];
+    if (mode === 'test') {
+      lines.push(`Verifica la tarea ${t.id} del spec ${D.spec}: "${t.title}". No modifiques código ni specs: solo comprueba y reporta.`);
+      lines.push(...contextLines(t));
+      lines.push('Criterio de verificación (tasks.md):');
+      lines.push(t.verify ? `- ${t.verify}` : '- (sin criterio explícito: deriva las comprobaciones de la descripción de la tarea y de sus requirements)');
+      lines.push('Haz esto: 1) ejecuta literalmente el criterio de verificación (comandos, tests, greps) y pega la salida relevante; 2) para cada requirement listado, indica PASS o FAIL con la evidencia (archivo:línea o salida); 3) si el criterio es tautológico o no prueba realmente el requirement, dilo; 4) termina con un veredicto: CUMPLE / CUMPLE PARCIALMENTE / NO CUMPLE y qué falta.');
+    } else {
+      lines.push(`Ejecuta la tarea ${t.id} del spec ${D.spec}: "${t.title}".`);
+      lines.push(...contextLines(t));
+      if (t.body.length) { lines.push('Qué hace:'); t.body.forEach(b => lines.push(`- ${b}`)); }
+      if (t.verify) lines.push(`Criterio de verificación: ${t.verify}`);
+      lines.push('Lee la descripción completa en tasks.md, implementa la tarea, ejecuta el criterio de verificación y, solo si pasa, marca su casilla como [x] en tasks.md.');
+    }
+    lines.push('Nota: este encargo lo ejecuta la sesión local de Claude Code con el repo en disco (D:\\Demos\\swarm-guard). Si eres el auto-respondedor remoto sin acceso al disco, responde solo "Recibido; lo atiende la sesión local" y no verifiques contra GitHub.');
+    let text = lines.join('\n');
+    while (new TextEncoder().encode(text).length > 4000) text = text.slice(0, text.length - 200) + '…';
+    return text;
+  }
+
+  function markSent(id, mode) {
+    runs[id] = Object.assign({}, runs[id] || {}, { [mode]: Date.now() });
+    try { localStorage.setItem(RUNS_KEY, JSON.stringify(runs)); } catch (e) { /* ignore */ }
+  }
+
+  function setNote(html) { $('claudeNote').innerHTML = html; }
+
+  async function initClaude() {
+    if (!(window.claude && typeof window.claude.use === 'function')) { sendState = 'absent'; setNote('Fuera del visor de claude.ai: usa <b>Copiar prompt</b> y pégalo en Claude Code o Kiro.'); render(); return; }
+    try { commentsApi = await window.claude.use('comments'); } catch (e) { commentsApi = null; }
+    await refreshSendState();
+  }
+
+  async function refreshSendState() {
+    if (!commentsApi || typeof commentsApi.canSendToClaude !== 'function') {
+      sendState = 'off';
+      setNote('Esta vista no puede enviar comentarios a Claude. Usa <b>Copiar prompt</b> y pégalo en Claude Code o Kiro.');
+      render(); return;
+    }
+    try { sendState = await commentsApi.canSendToClaude(); } catch (e) { sendState = 'off'; }
+    const notes = {
+      available: 'Respaldo: <b>↗ comentario</b> envía el encargo como comentario a la sesión de Claude Code que publicó esta página; ella lo atiende en su siguiente turno y responde en el hilo.',
+      writers_only: 'Puedes comentar, pero solo un editor de la página puede enviar encargos a Claude. Usa <b>Copiar prompt</b>.',
+      no_session: 'No hay una sesión de Claude escuchando esta página ahora. Abre la conversación que la publicó, o usa <b>Copiar prompt</b>.',
+      off: 'El envío a Claude no está disponible en esta vista. Usa <b>Copiar prompt</b>.',
+    };
+    setNote(notes[sendState] || notes.off);
+    render();
+  }
+
+  async function runTask(id, btn, mode) {
+    const t = byId[id]; if (!t || !commentsApi) return;
+    const card = btn.closest('.card') || btn.closest('.drawer') || btn;
+    btn.disabled = true; btn.classList.add('busy'); btn.textContent = '… enviando';
+    try {
+      const anchor = await commentsApi.anchorFor(card);
+      await commentsApi.sendToClaude({ anchor, text: buildPrompt(t, mode) });
+      markSent(id, mode);
+      btn.textContent = '✓ enviada a Claude';
+      setTimeout(render, 1500);
+    } catch (err) {
+      const code = err && err.code;
+      btn.classList.remove('busy');
+      if (code === 'consent_required') { btn.textContent = 'Permiso pendiente'; setNote('No se envió: la página necesita tu permiso para comentar en tu nombre. Vuelve a pulsar y acepta el aviso del visor.'); btn.disabled = false; }
+      else if (code === 'forbidden') { sendState = 'off'; setNote('Has desactivado los comentarios desde la página para este artifact. Puedes volver a permitirlos desde el panel de comentarios de claude.ai, o usar <b>Copiar prompt</b>.'); render(); }
+      else if (code === 'claude_unavailable' || code === 'no_session') { await refreshSendState(); }
+      else if (code === 'rate_limited') { btn.textContent = 'Demasiado seguido'; setTimeout(render, 4000); }
+      else { btn.textContent = 'No se pudo enviar'; setNote(`No se pudo enviar el encargo (${esc(code || 'error')}). Usa <b>Copiar prompt</b> como alternativa.`); setTimeout(render, 3000); }
+    }
+  }
+
+  function copyPrompt(id, btn, mode) {
+    const t = byId[id]; if (!t) return;
+    const text = buildPrompt(t, mode);
+    const done = () => { const old = btn.textContent; btn.textContent = 'Copiado'; setTimeout(() => (btn.textContent = old), 1400); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+    else fallbackCopy(text, done);
+  }
+  function fallbackCopy(text, done) {
+    const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.left = '-9999px';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { /* leave selected */ }
+    document.body.removeChild(ta);
+  }
+
+  function render() {
+    const list = visible();
+    $('count').textContent = `${list.length} de ${D.tasks.length} tareas`;
+    $('grid').innerHTML = list.length ? list.map(card).join('') : '<p class="empty">Ninguna tarea coincide con los filtros.</p>';
+  }
+
+  $('q').addEventListener('input', e => { state.q = e.target.value; persist(); render(); });
+  $('phaseSel').addEventListener('change', e => { state.phase = e.target.value; persist(); render(); });
+  for (const k in chips) chips[k].addEventListener('click', () => { state[k] = !state[k]; syncChips(); persist(); render(); });
+  $('grid').addEventListener('click', e => {
+    const run = e.target.closest('[data-run]'); if (run) { e.stopPropagation(); runTask(run.dataset.run, run, 'run'); return; }
+    const tst = e.target.closest('[data-test]'); if (tst) { e.stopPropagation(); runTask(tst.dataset.test, tst, 'test'); return; }
+    const cp = e.target.closest('[data-prompt]'); if (cp) { e.stopPropagation(); copyPrompt(cp.dataset.prompt, cp, 'run'); return; }
+    const ct = e.target.closest('[data-prompt-test]'); if (ct) { e.stopPropagation(); copyPrompt(ct.dataset.promptTest, ct, 'test'); return; }
+    const c = e.target.closest('.card'); if (!c) return;
+    location.hash = c.dataset.id;
+  });
+  $('grid').addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    if (!e.target.classList.contains('card')) return;
+    e.preventDefault(); location.hash = e.target.dataset.id;
+  });
+
+  // --- drawer -----------------------------------------------------------------
+  function copyText(text, btn) {
+    const ok = () => { const old = btn.textContent; btn.textContent = 'Copiado'; setTimeout(() => (btn.textContent = old), 1200); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok, () => fallback());
+    else fallback();
+    function fallback() {
+      const r = document.createRange(); r.selectNodeContents(btn.previousElementSibling);
+      const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    }
+  }
+
+  function reqItem(r) {
+    const it = D.requirements[r];
+    if (!it) return `<div class="item"><div class="k"><b>${esc(r)}</b><small>no encontrado en requirements.md</small></div></div>`;
+    return `<div class="item">
+      <div class="k"><b>${esc(r)}</b><span>${esc(it.title)}</span><small>requirements.md:${it.line}</small></div>
+      <p>${esc(it.text)}</p>
+      ${it.story ? `<p class="story">${esc(it.story)}</p>` : ''}
+    </div>`;
+  }
+  function designItem(d) {
+    const exact = /^valida|^P\d+$/.test(d.via);
+    return `<div class="item">
+      <div class="k"><span>§ ${esc(d.heading)}</span><small>design.md:${d.line}</small><span class="via ${exact ? 'exact' : ''}" title="${exact ? 'vínculo por Validates / propiedad' : 'vínculo por palabra clave'}">${esc(d.via)}</span></div>
+      ${d.excerpt ? `<p class="muted">${esc(d.excerpt)}</p>` : ''}
+    </div>`;
+  }
+
+  function openDrawer(id) {
+    const t = byId[id]; if (!t) return;
+    const subs = t.subtaskIds.map(s => byId[s]).filter(Boolean);
+    const loc = `.kiro/specs/${D.spec}/tasks.md:${t.line}`;
+    $('drawerRoot').innerHTML = `
+      <div class="scrim" data-close></div>
+      <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="dTitle">
+        <div class="dhead">
+          <h2 id="dTitle"><span class="mono">${esc(t.id)}</span> ${esc(t.title)}</h2>
+          <button class="close" data-close aria-label="Cerrar">✕</button>
+        </div>
+        <div class="top" style="display:flex;gap:8px;align-items:center">
+          <span class="pill ${t.status}">${STATUS_ES[t.status]}</span><span class="mono">${t.percent}%</span>
+          ${t.optional ? '<span class="tag">opcional</span>' : ''}
+          ${t.properties.length ? t.properties.map(p => `<span class="tag mono">${esc(p)}</span>`).join('') : ''}
+        </div>
+        <div class="loc"><code>${esc(loc)}</code><button class="copy" data-copy="${esc(loc)}">Copiar ruta</button></div>
+        <div class="actions">${runControls(t)}</div>
+        ${t.body.length ? `<section><h3>Qué hace</h3><ul class="body">${t.body.map(b => `<li>${esc(b)}</li>`).join('')}</ul></section>` : ''}
+        <section><h3>Criterio de verificación</h3>${t.verify ? `<p class="verify">${esc(t.verify)}</p>` : '<p class="muted">Sin criterio explícito en tasks.md.</p>'}</section>
+        ${subs.length ? `<section><h3>Subtareas</h3>${subs.map(s => `<div class="subrow"><span class="dot ${s.status}"></span><a href="#${esc(s.id)}" class="mono">${esc(s.id)}</a><span>${esc(s.title)}</span><span class="pct mono">${s.percent}%</span></div>`).join('')}</section>` : ''}
+        ${t.parentId ? `<section><h3>Pertenece a</h3><div class="subrow"><a href="#${esc(t.parentId)}" class="mono">${esc(t.parentId)}</a><span>${esc(byId[t.parentId] ? byId[t.parentId].title : '')}</span></div></section>` : ''}
+        <section><h3>Requirements (${t.requirements.length})</h3>${t.requirements.length ? t.requirements.map(reqItem).join('') : '<p class="muted">Esta tarea no referencia ningún criterio.</p>'}</section>
+        <section><h3>Design (${t.design.length})</h3>${t.design.length ? t.design.map(designItem).join('') : '<p class="muted">Sin secciones de design vinculadas.</p>'}</section>
+      </aside>`;
+    $('drawerRoot').hidden = false;
+    $('drawerRoot').querySelector('.close').focus();
+  }
+  function closeDrawer() { $('drawerRoot').hidden = true; $('drawerRoot').innerHTML = ''; }
+
+  $('drawerRoot').addEventListener('click', e => {
+    if (e.target.closest('[data-close]')) { history.replaceState(null, '', location.pathname + location.search); closeDrawer(); return; }
+    const run = e.target.closest('[data-run]'); if (run) { runTask(run.dataset.run, run, 'run'); return; }
+    const tst = e.target.closest('[data-test]'); if (tst) { runTask(tst.dataset.test, tst, 'test'); return; }
+    const pr = e.target.closest('[data-prompt]'); if (pr) { copyPrompt(pr.dataset.prompt, pr, 'run'); return; }
+    const pt = e.target.closest('[data-prompt-test]'); if (pt) { copyPrompt(pt.dataset.promptTest, pt, 'test'); return; }
+    const cp = e.target.closest('[data-copy]'); if (cp) copyText(cp.dataset.copy, cp);
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('drawerRoot').hidden) { history.replaceState(null, '', location.pathname + location.search); closeDrawer(); } });
+
+  function route() {
+    const id = decodeURIComponent(location.hash.slice(1));
+    if (id && byId[id]) openDrawer(id); else closeDrawer();
+  }
+  window.addEventListener('hashchange', route);
+
+  $('bridgeShown').textContent = bridge;
+  $('bridgeCfg').addEventListener('click', () => {
+    const box = document.createElement('input');
+    box.type = 'url'; box.value = bridge; box.id = 'bridgeInput'; box.style.cssText = 'margin-left:8px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--fg);font-family:var(--mono);min-width:260px';
+    const save = document.createElement('button'); save.className = 'ghost'; save.textContent = 'Guardar';
+    const cfg = $('bridgeCfg'); cfg.replaceWith(box, save);
+    save.addEventListener('click', () => {
+      bridge = box.value.trim() || 'http://127.0.0.1:8787';
+      try { localStorage.setItem(BRIDGE_KEY, bridge); } catch (e) { /* ignore */ }
+      $('bridgeShown').textContent = bridge; box.replaceWith(cfg); save.remove(); render();
+    });
+  });
+
+  render();
+  route();
+  initClaude();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && commentsApi) refreshSendState(); });
+
+  // --- code rain behind the header (low alpha; off under reduced motion) ----
+  (function rain() {
+    const canvas = document.getElementById('rain');
+    const header = canvas && canvas.parentElement;
+    if (!canvas || !header || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const ctx = canvas.getContext('2d');
+    const glyphs = 'アイウエオカキクケコサシスセソ0123456789ABCDEF<>/[]{}=+*';
+    let cols = [], w = 0, h = 0, cell = 14;
+    function size() {
+      const r = header.getBoundingClientRect();
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      w = Math.max(1, Math.floor(r.width)); h = Math.max(1, Math.floor(r.height));
+      canvas.width = w * dpr; canvas.height = h * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      cols = Array.from({ length: Math.ceil(w / cell) }, () => Math.random() * -h / cell);
+      ctx.fillStyle = '#1a1b26'; ctx.fillRect(0, 0, w, h);
+    }
+    size();
+    new ResizeObserver(size).observe(header);
+    let last = 0;
+    function frame(ts) {
+      if (ts - last > 70) {
+        last = ts;
+        ctx.fillStyle = 'rgba(26, 27, 38, 0.22)'; ctx.fillRect(0, 0, w, h);
+        ctx.font = `${cell - 2}px "JetBrains Mono", monospace`;
+        for (let i = 0; i < cols.length; i++) {
+          const y = cols[i] * cell;
+          ctx.fillStyle = Math.random() < .08 ? '#f3dcff' : '#c84bff';
+          ctx.fillText(glyphs[(Math.random() * glyphs.length) | 0], i * cell, y);
+          cols[i] = y > h && Math.random() > .975 ? 0 : cols[i] + 1;
+        }
+      }
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  })();
+})();
+</script>
