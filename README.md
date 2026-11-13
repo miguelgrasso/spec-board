@@ -193,3 +193,7 @@ El mod está escrito contra la API de mods de Claude Code (hooks `session.start`
   y se extrajo a este repo en noviembre de 2026. Está probado con un solo spec por proyecto.
 - `start.cmd` es de Windows; en otros sistemas arranca bridge y mod a mano.
 - El bridge no tiene autenticación: por eso escucha solo en localhost y no debe exponerse.
+
+## License
+
+Este proyecto se distribuye bajo la licencia [Apache 2.0](LICENSE).
