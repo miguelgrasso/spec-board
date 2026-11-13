@@ -59,7 +59,7 @@ subtareas, o se puede fijar a mano desde el mod para tareas sin subtareas.
 
 ## El mod de Claude Code
 
-Se carga con `claude --plugin-dir ..\spec-board\mod`. Al iniciar la sesión abre el panel **Spec board**:
+Se carga con `claude --plugin-dir ../spec-board/mod`. Al iniciar la sesión abre el panel **Spec board**:
 una barra de avance por spec, las fases con su cuenta, y cada tarea con su semáforo. Las tareas dentro del
 alcance del bridge tienen botones ▶ (ejecutar) y ✓ (testear); al pulsar una tarea se abre su detalle con
 el criterio de verificación y la línea de `tasks.md` donde vive.
@@ -117,15 +117,15 @@ herramienta.
 
 ## Instalación y uso
 
-Requisitos: Windows (el arranque es un `.cmd`; bridge y generador son Python puro), Python 3.11+ y
-[Claude Code](https://claude.com/claude-code).
+Requisitos: Python 3.11+ y [Claude Code](https://claude.com/claude-code). Funciona en Windows, Linux y
+macOS: bridge y generador son Python puro, y hay un lanzador por plataforma (`start.cmd` / `start.sh`).
 
 1. Clona este repo al lado de tu proyecto:
 
    ```
-   D:\Demos\
-   ├── spec-board\      ← este repo
-   └── mi-proyecto\     ← tiene .kiro\specs\<spec>\tasks.md
+   proyectos/
+   ├── spec-board/      ← este repo
+   └── mi-proyecto/     ← tiene .kiro/specs/<spec>/tasks.md
    ```
 
 2. En la raíz de tu proyecto crea `.claude/spec-board.json` (todos los campos son opcionales):
@@ -139,13 +139,13 @@ Requisitos: Windows (el arranque es un `.cmd`; bridge y generador son Python pur
      "bridge": {
        "url": "http://127.0.0.1:8787",
        "autoStart": true,
-       "start": [".venv/Scripts/python.exe", "../spec-board/bridge/bridge.py"],
-       "claudePath": "~/.local/bin/claude.exe"
+       "start": [".venv/bin/python", "../spec-board/bridge/bridge.py"],
+       "claudePath": "~/.local/bin/claude"
      },
      "dashboard": {
        "dir": ".claude/spec-board",
        "generator": "../spec-board/bridge/gen_spec_data.py",
-       "python": ".venv/Scripts/python.exe",
+       "python": ".venv/bin/python",
        "artifactUrl": ""
      }
    }
@@ -154,19 +154,25 @@ Requisitos: Windows (el arranque es un `.cmd`; bridge y generador son Python pur
    `dashboard.dir` recibe los archivos generados por proyecto (`data.js`, copia de `index.html`,
    `runs/`); conviene tenerlo en `.gitignore`.
 
+   `dashboard.python` y el primer elemento de `bridge.start` son el intérprete del proyecto. Por defecto
+   `.venv/bin/python` en Linux y macOS, `.venv/Scripts/python.exe` en Windows; el bridge deriva de ese
+   valor la lista blanca de comandos del agente (`pytest`, `mypy`, `ruff`).
+
    `bridge.claudePath` solo hace falta si `claude` no está en el PATH. El bridge resuelve el
    ejecutable en este orden: `claude` en el PATH, luego `bridge.claudePath` (admite `~` y variables de
    entorno). Si no lo encuentra, no arranca y explica cómo configurarlo.
 
 3. Desde la raíz del proyecto:
 
-   ```bat
-   ..\spec-board\start.cmd            REM bridge + Claude Code con el mod, continúa la última sesión
-   ..\spec-board\start.cmd <session>  REM reanuda una sesión concreta
+   ```sh
+   ../spec-board/start.sh             # bridge + Claude Code con el mod, continúa la última sesión
+   ../spec-board/start.sh <session>   # reanuda una sesión concreta
    ```
 
-   O por separado: `python ..\spec-board\bridge\bridge.py` para el bridge (toma el proyecto del
-   directorio actual o de `SPEC_BOARD_REPO`) y `claude --plugin-dir ..\spec-board\mod` para el mod.
+   En Windows, lo mismo con `..\spec-board\start.cmd`.
+
+   O por separado: `python ../spec-board/bridge/bridge.py` para el bridge (toma el proyecto del
+   directorio actual o de `SPEC_BOARD_REPO`) y `claude --plugin-dir ../spec-board/mod` para el mod.
 
 ## Qué parsea del spec
 
@@ -209,7 +215,6 @@ El mod está escrito contra la API de mods de Claude Code (hooks `session.start`
 
 - Nació como herramienta interna del proyecto [swarm-guard](https://github.com/miguelgrasso/swarm-guard)
   y se extrajo a este repo en noviembre de 2026. Está probado con un solo spec por proyecto.
-- `start.cmd` es de Windows; en otros sistemas arranca bridge y mod a mano.
 - El bridge no tiene autenticación: por eso escucha solo en localhost y no debe exponerse.
 
 ## License
