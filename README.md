@@ -185,8 +185,21 @@ Si tu spec usa otras convenciones, el punto de entrada es `parse_tasks()` en `br
 ```bat
 claude plugin validate mod
 claude plugin test mod
-python bridge\gen_spec_data.py <ruta-al-spec> <carpeta-salida>
+python bridge\gen_spec_data.py <ruta-al-spec> <carpeta-salida> [nombre-del-repo]
 ```
+
+### Tests del mod
+
+Los tests viven junto al código del mod (`mod/hooks/*.test.tsx`) y los ejecuta el propio motor de Claude
+Code, sin instalar nada más:
+
+```bat
+claude plugin validate mod     REM comprueba manifiesto, hooks y el contrato de estado
+claude plugin test mod         REM ejecuta los tests del mod en un motor aislado
+```
+
+Requiere Claude Code 2.1.3xx o superior. Si `claude` no está en el PATH, usa la ruta completa del
+ejecutable (la misma que pondrías en `bridge.claudePath`).
 
 `mod/.claude-plugin/types/` lo escribe el motor de Claude Code al cargar el mod y está ignorado por git.
 El mod está escrito contra la API de mods de Claude Code (hooks `session.start`, `command.run`,
