@@ -139,7 +139,8 @@ Requisitos: Windows (el arranque es un `.cmd`; bridge y generador son Python pur
      "bridge": {
        "url": "http://127.0.0.1:8787",
        "autoStart": true,
-       "start": [".venv/Scripts/python.exe", "../spec-board/bridge/bridge.py"]
+       "start": [".venv/Scripts/python.exe", "../spec-board/bridge/bridge.py"],
+       "claudePath": "~/.local/bin/claude.exe"
      },
      "dashboard": {
        "dir": ".claude/spec-board",
@@ -152,6 +153,10 @@ Requisitos: Windows (el arranque es un `.cmd`; bridge y generador son Python pur
 
    `dashboard.dir` recibe los archivos generados por proyecto (`data.js`, copia de `index.html`,
    `runs/`); conviene tenerlo en `.gitignore`.
+
+   `bridge.claudePath` solo hace falta si `claude` no está en el PATH. El bridge resuelve el
+   ejecutable en este orden: `claude` en el PATH, luego `bridge.claudePath` (admite `~` y variables de
+   entorno). Si no lo encuentra, no arranca y explica cómo configurarlo.
 
 3. Desde la raíz del proyecto:
 

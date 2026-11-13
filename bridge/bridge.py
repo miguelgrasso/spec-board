@@ -19,7 +19,7 @@ Routes
     GET /regen                  regenerate data.js from the spec, JSON result
 
 Settings: `.claude/spec-board.json` at the repo root (optional) — specsDir, spec,
-allowedTasks (regex), bridge.url, dashboard.python. Shared with the Claude Code mod.
+allowedTasks (regex), bridge.url, bridge.claudePath, dashboard.python. Shared with the Claude Code mod.
 
 Safety (pilot scope = Phase A):
     * only task ids matching ^A\\d+(\\.\\d+)?$ may run; B* and A-Checkpoint are refused
@@ -35,6 +35,7 @@ import html
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -82,14 +83,31 @@ sys.path.insert(0, str(HERE))
 import gen_spec_data as gen  # noqa: E402  (same folder)
 
 ALLOWED_TASK = re.compile(CONFIG["allowedTasks"])
-CLAUDE_CANDIDATES = [
-    os.environ.get("CLAUDE_BIN", ""),
-    os.path.expanduser(r"~\.local\bin\claude.exe"),
-    r"C:\Users\Usuario\.kiro\extensions\anthropic.claude-code-2.1.319-win32-x64\resources\native-binary\claude.exe",
-    r"C:\Users\Usuario\.vscode\extensions\anthropic.claude-code-2.1.282-win32-x64\resources\native-binary\claude.exe",
-    r"C:\Users\Usuario\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe",
-    "claude",
-]
+
+
+def find_claude() -> str:
+    """Resolve the `claude` executable, in order: PATH, then `bridge.claudePath` in the config."""
+    found = shutil.which("claude")
+    if found:
+        return found
+    configured = CONFIG["bridge"].get("claudePath")
+    if configured:
+        candidate = Path(os.path.expandvars(os.path.expanduser(str(configured))))
+        if candidate.exists():
+            return str(candidate)
+        sys.exit(
+            f"[bridge] bridge.claudePath apunta a un archivo que no existe: {candidate}\n"
+            "Corrige el campo en .claude/spec-board.json o quítalo para usar el `claude` del PATH."
+        )
+    sys.exit(
+        "[bridge] no encuentro el ejecutable `claude`.\n"
+        "Opciones: (a) añade Claude Code al PATH, o (b) indica su ruta en .claude/spec-board.json:\n"
+        '    {"bridge": {"claudePath": "C:/ruta/a/claude.exe"}}\n'
+        "Se aceptan ~ y variables de entorno (p. ej. ~/.local/bin/claude.exe)."
+    )
+
+
+CLAUDE = find_claude()
 ALLOWED_TOOLS = [
     "Read", "Glob", "Grep", "Edit", "MultiEdit", "Write",
     "Bash(.venv/Scripts/python.exe -m pytest:*)",
@@ -160,13 +178,6 @@ def build_prompt(spec: dict, task: dict, mode: str) -> str:
     return "\n".join(lines)
 
 
-def find_claude() -> str:
-    for c in CLAUDE_CANDIDATES:
-        if c and (Path(c).exists() or c == "claude"):
-            return c
-    return "claude"
-
-
 def agent_env() -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("AWS_")}
     env.pop("BEDROCK_MODEL_ID", None)
@@ -185,7 +196,7 @@ def start_job(task_id: str, mode: str, dry: bool) -> dict:
     if not ALLOWED_TASK.match(task_id):
         raise PermissionError(f"{task_id} no está en el alcance del piloto (solo tareas A<n> de la fase A; B* y A-Checkpoint se hacen a mano).")
     prompt = build_prompt(spec, task, mode)
-    cmd = [find_claude(), "-p", prompt, "--output-format", "text",
+    cmd = [CLAUDE, "-p", prompt, "--output-format", "text",
            "--permission-mode", "acceptEdits",
            "--append-system-prompt", SYSTEM_RULES,
            "--allowedTools", *ALLOWED_TOOLS]
@@ -270,18 +281,18 @@ class Handler(BaseHTTPRequestHandler):
         try:
             # --- JSON API (used by the Claude Code mod) ---
             if url.path == "/health":
-                return self._json({"ok": True, "repo": str(REPO), "spec": CONFIG["spec"], "claude": find_claude(),
+                return self._json({"ok": True, "repo": str(REPO), "spec": CONFIG["spec"], "claude": CLAUDE,
                                    "running": sum(1 for j in _jobs.values() if j["status"] == "running")})
             if url.path == "/jobs.json":
                 jobs = sorted(_jobs.values(), key=lambda j: j["started"], reverse=True)[:50]
                 return self._json([public_job(j) for j in jobs])
             if url.path == "/regen":
-                gen.main_to(SPEC_DIR, DATA_DIR)
+                gen.main_to(SPEC_DIR, DATA_DIR, repo_name=REPO.name)
                 data = DATA_DIR / "data.js"
                 return self._json({"ok": True, "data": str(data), "bytes": data.stat().st_size})
             if url.path in ("/", "/board", "/board/", "/index.html"):
                 # The dashboard itself, with data regenerated from the spec on every load.
-                gen.main_to(SPEC_DIR, DATA_DIR)
+                gen.main_to(SPEC_DIR, DATA_DIR, repo_name=REPO.name)
                 html_text = (HERE / "index.html").read_text(encoding="utf-8")
                 doc = ('<!doctype html><html><head><meta charset="utf-8">'
                        '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
@@ -335,7 +346,7 @@ class Handler(BaseHTTPRequestHandler):
         jrows = "".join(
             f"<tr><td><a href='/job/{j['id']}'>{j['id']}</a></td><td><span class='pill {j['status']}'>{j['status']}</span></td>"
             f"<td>{html.escape(j['result'])}</td></tr>" for j in jobs) or "<tr><td colspan=3 class=muted>sin ejecuciones aún</td></tr>"
-        body = (f"<p class=muted>repo {html.escape(str(REPO))} · claude: {html.escape(find_claude())} · alcance piloto: tareas A&lt;n&gt; de la fase A</p>"
+        body = (f"<p class=muted>repo {html.escape(str(REPO))} · claude: {html.escape(CLAUDE)} · alcance piloto: tareas A&lt;n&gt; de la fase A</p>"
                 f"<h2>Tareas</h2><table><tr><th>id</th><th>título</th><th>estado</th><th></th></tr>{rows}</table>"
                 f"<h2>Ejecuciones</h2><table><tr><th>id</th><th>estado</th><th>resultado</th></tr>{jrows}</table>")
         return page("spec-board bridge", body)
@@ -362,7 +373,7 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=default_port)
     args = ap.parse_args()
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
-    print(f"[bridge] spec-board bridge en http://{args.host}:{args.port}  (repo {REPO}, claude {find_claude()})", flush=True)
+    print(f"[bridge] spec-board bridge en http://{args.host}:{args.port}  (repo {REPO}, claude {CLAUDE})", flush=True)
     srv.serve_forever()
 
 

@@ -263,10 +263,10 @@ def design_for(design: list[dict], task: dict) -> list[dict]:
 
 
 def main() -> None:
-    main_to(Path(sys.argv[1]), Path(sys.argv[2]))
+    main_to(Path(sys.argv[1]), Path(sys.argv[2]), repo_name=sys.argv[3] if len(sys.argv) > 3 else None)
 
 
-def main_to(spec_dir: Path, out_dir: Path) -> None:
+def main_to(spec_dir: Path, out_dir: Path, repo_name: str | None = None) -> None:
     """Generate data.js for *spec_dir* into *out_dir* (importable entry point).
 
     index.html is copied next to data.js when missing or outdated, so *out_dir* is a
@@ -296,6 +296,7 @@ def main_to(spec_dir: Path, out_dir: Path) -> None:
     prog = sum(1 for t in top if t["status"] == "progress")
     data = {
         "spec": spec_dir.name,
+        "repo": repo_name or "",
         "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "files": {"tasks": "tasks.md", "requirements": "requirements.md", "design": "design.md"},
         "totals": {"total": len(top), "done": done, "progress": prog, "pending": len(top) - done - prog,

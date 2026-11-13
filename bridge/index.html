@@ -348,7 +348,7 @@
       if (t.verify) lines.push(`Criterio de verificación: ${t.verify}`);
       lines.push('Lee la descripción completa en tasks.md, implementa la tarea, ejecuta el criterio de verificación y, solo si pasa, marca su casilla como [x] en tasks.md.');
     }
-    lines.push('Nota: este encargo lo ejecuta la sesión local de Claude Code con el repo en disco (D:\\Demos\\swarm-guard). Si eres el auto-respondedor remoto sin acceso al disco, responde solo "Recibido; lo atiende la sesión local" y no verifiques contra GitHub.');
+    lines.push(`Nota: este encargo lo ejecuta la sesión local de Claude Code con el repo en disco (${D.repo || 'el repo local'}). Si eres el auto-respondedor remoto sin acceso al disco, responde solo "Recibido; lo atiende la sesión local" y no verifiques contra GitHub.`);
     let text = lines.join('\n');
     while (new TextEncoder().encode(text).length > 4000) text = text.slice(0, text.length - 200) + '…';
     return text;
