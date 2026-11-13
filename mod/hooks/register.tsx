@@ -61,6 +61,12 @@ const jobs = atom({ plugin: 'spec-board', key: 'jobs' } as const, {} as Jobs, { 
 
 // Module-local: lost on reload, rebuilt by the next refresh.
 let config: Config = DEFAULTS
+// Set at session.start from the working directory; picks the bridge launcher and the interpreter default.
+let isWindows = false
+
+function defaultPython(): string {
+  return isWindows ? '.venv/Scripts/python.exe' : '.venv/bin/python'
+}
 let lastSignature = ''
 let pendingChanges: string[] = []
 let regenTimer: { cancel: () => void } | undefined
@@ -386,14 +392,19 @@ function strList(v: unknown, fallback: string[]): string[] {
 /** `.claude/spec-board.json` merged over the defaults; the defaults alone when absent or broken. */
 async function loadConfig($: Engine): Promise<Config> {
   const text = await readOr($, CONFIG_FILE)
-  if (!text.trim()) return DEFAULTS
+  const base: Config = {
+    ...DEFAULTS,
+    bridge: { ...DEFAULTS.bridge, start: [defaultPython(), DEFAULTS.bridge.start[1]] },
+    dashboard: { ...DEFAULTS.dashboard, python: defaultPython() },
+  }
+  if (!text.trim()) return base
   let raw: unknown
   try {
     raw = JSON.parse(text)
   } catch {
-    return DEFAULTS
+    return base
   }
-  if (!isRecord(raw)) return DEFAULTS
+  if (!isRecord(raw)) return base
   const b = isRecord(raw.bridge) ? raw.bridge : {}
   const d = isRecord(raw.dashboard) ? raw.dashboard : {}
   return {
@@ -404,12 +415,12 @@ async function loadConfig($: Engine): Promise<Config> {
     bridge: {
       url: str(b.url, DEFAULTS.bridge.url).replace(/\/+$/, ''),
       autoStart: bool(b.autoStart, DEFAULTS.bridge.autoStart),
-      start: strList(b.start, DEFAULTS.bridge.start),
+      start: strList(b.start, base.bridge.start),
     },
     dashboard: {
       dir: str(d.dir, DEFAULTS.dashboard.dir),
       generator: str(d.generator, DEFAULTS.dashboard.generator),
-      python: str(d.python, DEFAULTS.dashboard.python),
+      python: str(d.python, base.dashboard.python),
       artifactUrl: str(d.artifactUrl, DEFAULTS.dashboard.artifactUrl),
     },
   }
@@ -607,8 +618,12 @@ async function ensureBridge($: Engine): Promise<boolean> {
   if (await bridgeUp($)) return true
   if (!config.bridge.autoStart || config.bridge.start.length === 0) return false
   try {
-    // Detached through `start` so the server outlives the call (and the session).
-    await $.process.run(['cmd', '/c', 'start', 'spec-board-bridge', '/min', ...config.bridge.start], { timeoutMs: 15_000 })
+    // Detached (`start` on Windows, `nohup … &` elsewhere) so the server outlives the call and the session.
+    if (isWindows) {
+      await $.process.run(['cmd', '/c', 'start', 'spec-board-bridge', '/min', ...config.bridge.start], { timeoutMs: 15_000 })
+    } else {
+      await $.process.run(['sh', '-c', 'nohup "$@" >/dev/null 2>&1 &', 'spec-board-bridge', ...config.bridge.start], { timeoutMs: 15_000 })
+    }
   } catch {
     return false
   }
@@ -635,7 +650,8 @@ function asJob(v: unknown): Job | undefined {
 }
 
 function startHint(): string {
-  return `Arráncalo con \`${config.bridge.start.join(' ')}\` (o ..\\spec-board\\start.cmd desde la raíz del proyecto)`
+  const script = isWindows ? '..\\spec-board\\start.cmd' : '../spec-board/start.sh'
+  return `Arráncalo con \`${config.bridge.start.join(' ')}\` (o ${script} desde la raíz del proyecto)`
 }
 
 /** Asks the bridge to run or verify a task; returns the job (to store) and a line for the person. */
@@ -894,6 +910,7 @@ function touchesSpecs(e: { tool: string } & Record<string, unknown>): boolean {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    isWindows = /^[A-Za-z]:[\\/]/.test(e.cwd)
     config = await loadConfig($)
     await $.command.register({
       name: COMMAND,

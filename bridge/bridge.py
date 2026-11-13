@@ -4,6 +4,7 @@
     (from the root of the project that holds .kiro/specs and .claude/spec-board.json)
     .venv\\Scripts\\python.exe ..\\spec-board\\bridge\\bridge.py            # serve on 127.0.0.1:8787
     .venv\\Scripts\\python.exe ..\\spec-board\\bridge\\bridge.py --port 8790
+    .venv/bin/python ../spec-board/bridge/bridge.py                   # Linux / macOS
 
 Routes
     GET /                       the dashboard (data.js regenerated from the spec on every load)
@@ -50,6 +51,10 @@ HERE = Path(__file__).resolve().parent          # this tool (bridge.py, gen_spec
 REPO = Path(os.environ.get("SPEC_BOARD_REPO") or Path.cwd()).resolve()
 
 
+# Project interpreter by platform; overridable with dashboard.python in the config.
+DEFAULT_PYTHON = ".venv/Scripts/python.exe" if os.name == "nt" else ".venv/bin/python"
+
+
 def load_config() -> dict:
     """Per-project settings shared with the mod: `.claude/spec-board.json` (optional)."""
     defaults = {
@@ -57,7 +62,7 @@ def load_config() -> dict:
         "spec": "swarm-guard",
         "allowedTasks": r"^A\d+(\.\d+)?$",
         "bridge": {"url": "http://127.0.0.1:8787"},
-        "dashboard": {"dir": ".claude/spec-board", "python": ".venv/Scripts/python.exe"},
+        "dashboard": {"dir": ".claude/spec-board", "python": DEFAULT_PYTHON},
     }
     path = REPO / ".claude" / "spec-board.json"
     if path.exists():
@@ -102,22 +107,26 @@ def find_claude() -> str:
     sys.exit(
         "[bridge] no encuentro el ejecutable `claude`.\n"
         "Opciones: (a) añade Claude Code al PATH, o (b) indica su ruta en .claude/spec-board.json:\n"
-        '    {"bridge": {"claudePath": "C:/ruta/a/claude.exe"}}\n'
-        "Se aceptan ~ y variables de entorno (p. ej. ~/.local/bin/claude.exe)."
+        '    {"bridge": {"claudePath": "/ruta/a/claude"}}   (Windows: "C:/ruta/a/claude.exe")\n'
+        "Se aceptan ~ y variables de entorno (p. ej. ~/.local/bin/claude)."
     )
 
 
 CLAUDE = find_claude()
-ALLOWED_TOOLS = [
-    "Read", "Glob", "Grep", "Edit", "MultiEdit", "Write",
-    "Bash(.venv/Scripts/python.exe -m pytest:*)",
-    "Bash(.venv/Scripts/python.exe -m mypy:*)",
-    "Bash(.venv/Scripts/python.exe -m ruff:*)",
-    "Bash(.venv\\Scripts\\python.exe -m pytest:*)",
-    "Bash(.venv\\Scripts\\python.exe -m mypy:*)",
-    "Bash(.venv\\Scripts\\python.exe -m ruff:*)",
-    "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)",
-]
+def allowed_tools() -> list[str]:
+    """Tool allow-list for the agent: edit files + the project's own pytest/mypy/ruff + read-only git."""
+    py = CONFIG["dashboard"]["python"]
+    variants = {py.replace("\\", "/")}
+    if os.name == "nt":
+        variants.add(py.replace("/", "\\"))
+    tools = ["Read", "Glob", "Grep", "Edit", "MultiEdit", "Write"]
+    for v in sorted(variants):
+        tools += [f"Bash({v} -m pytest:*)", f"Bash({v} -m mypy:*)", f"Bash({v} -m ruff:*)"]
+    tools += ["Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)"]
+    return tools
+
+
+ALLOWED_TOOLS = allowed_tools()
 SYSTEM_RULES = (
     f"Eres un agente autónomo que ejecuta UNA tarea del spec Kiro `{CONFIG['spec']}` en el repo local. "
     "Reglas duras: no hagas git commit/push/rm; no uses aws ni ningún comando de red; no toques tareas de la fase B; "
